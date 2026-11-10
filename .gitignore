@@ -1,0 +1,5 @@
+# Personal plans and browser exports must not enter the public repository.
+*.json
+private/
+*private*
+*backup*
