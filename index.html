@@ -215,4 +215,109 @@ document.addEventListener('submit',e=>{if(e.target.id==='courseForm'){e.preventD
 $('deadForm').onsubmit=e=>{e.preventDefault();S.deadlines.push({id:uid(),title:$('deadTitle').value,course:$('deadCourse').value,date:$('deadDate').value,tentative:$('deadTentative').checked});save();$('deadDialog').close();e.target.reset();render()};
 if(loadError){$('saveNotice').hidden=false;$('saveNotice').textContent='Saved data could not be read. A fresh plan is shown; the unreadable backup was not overwritten. Back up or restore a valid snapshot before making changes.'}else save();render();
 window.addEventListener('beforeunload',e=>{if(timer.end){e.preventDefault();e.returnValue='A focus timer is running.'}});
-</script></body></html>
+</script>
+<script>
+(() => {
+  if (window.studyDeletePatch) return;
+  window.studyDeletePatch = true;
+
+  function removeEvent(id) {
+    const found = findBlock(id);
+    const day = id.slice(-10);
+    const recurring = !found && S.commitments.find(
+      c => `rec:${c.id}:${day}` === id
+    );
+
+    if (!found && !recurring) return;
+
+    const title = readableText((found?.b || recurring).title);
+    const question = recurring
+      ? `Delete "${title}" on ${day} only?`
+      : `Delete "${title}"?`;
+
+    if (!confirm(question)) return;
+
+    if (found) {
+      const w = S.weeks[found.k];
+      const list = found.backlog ? "backlog" : "blocks";
+      w[list] = w[list].filter(b => b.id !== id);
+    } else {
+      recurring.excludedDates = [
+        ...new Set([...(recurring.excludedDates || []), day])
+      ];
+    }
+
+    if (timer.block === id) {
+      timer.end = null;
+      timer.block = "";
+      timer.remaining = timer.length * 60;
+    }
+
+    ["detailDialog", "editor"].forEach(name => {
+      if ($(name).open) $(name).close();
+    });
+
+    const saved = save();
+    render();
+    toast(saved
+      ? "Event deleted."
+      : "Deleted for this session. Back up before closing."
+    );
+  }
+
+  const originalOccurrences = occurrences;
+  occurrences = function(day) {
+    return originalOccurrences(day).filter(event => {
+      const source = S.commitments.find(
+        c => `rec:${c.id}:${day}` === event.id
+      );
+      return !(source?.excludedDates || []).includes(day);
+    });
+  };
+
+  const originalDetail = openDetail;
+  openDetail = function(id) {
+    originalDetail(id);
+
+    if (!$("detailBody").querySelector("[data-delete]")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn ghost";
+      button.textContent = id.startsWith("rec:")
+        ? "Delete this date only"
+        : "Delete event";
+      button.dataset.delete = id;
+      button.style.marginTop = "1rem";
+      $("detailBody").append(button);
+    }
+  };
+
+  const originalEdit = openEdit;
+  openEdit = function(id, day) {
+    originalEdit(id, day);
+
+    let button = $("deleteEdit");
+    if (!button) {
+      button = document.createElement("button");
+      button.id = "deleteEdit";
+      button.type = "button";
+      button.className = "btn ghost";
+      button.textContent = "Delete event";
+      $("cancelEdit").after(button);
+    }
+
+    button.hidden = !$("blockId").value;
+    button.onclick = () => removeEvent($("blockId").value);
+  };
+
+  document.addEventListener("click", event => {
+    const button = event.target.closest("button[data-delete]");
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    removeEvent(button.dataset.delete);
+  }, true);
+})();
+</script>
+</body></html>
